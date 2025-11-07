@@ -42,7 +42,8 @@ Most used example with separate command:
  bld packrfs [ -r <type> ]       # pack and compress target rootfs as rootfs_xx.tar.zst (or add '-r debian:server' for Server)
  bld packapps [ -r <type> ]      # pack and compress target app components as apps_xx.tar.zst (add '-p LS' for Layerscape platforms)
  bld repo-fetch [ <component> ]  # fetch git repository of all or specified component from remote repos if not exist locally
- bld docker                      # create or attach docker container to build in docker
+ bld docker                      # create or attach docker container to build in docker (runs as root)
+ bld docker-user                 # create or attach user-aware docker container (recommended for Yocto/Poky builds)
  bld docker-clean                # stop and remove the docker container
  bld clean                       # clean all obsolete firmware/linux/apps binary images except distro rootfs
  bld clean-apps [ -r <type> ]    # clean the obsolete NXP-specific apps components binary images
@@ -374,7 +375,11 @@ create_recovery_sdcard_image() {
 	. $FBDIR/configs/board/$MACHINE.conf
 
 	# Get paths to input rootfs
-	ROOTFS_NAME="${RFSDIR##*/}"
+	if [ $DISTROTYPE = poky -o $DISTROTYPE = buildroot ]; then
+		ROOTFS_NAME="rootfs_${DISTRIB_VERSION}_${DISTROTYPE}_${DISTROVARIANT}_${DESTARCH}"
+	else
+		ROOTFS_NAME="${RFSDIR##*/}"
+	fi
 	ROOTFS_ARCHIVE="$FBOUTDIR/images/${ROOTFS_NAME}.tar.zst"
 
 	# Get paths to Output image
@@ -483,11 +488,32 @@ merge_apps() {
 merge_bootpart_rfs() {
     fbprint_n "Generating rootfs without boot partition..."
     generate_bootpartition
+    
+    # Fix ownership after generate_bootpartition which may use sudo
+    if [ -n "${SUDO_USER:-}" ]; then
+        sudo chown -R $SUDO_USER:$SUDO_USER $RFSDIR
+    elif [ "$(id -u)" = "0" ]; then
+        # Running as root, try to use original user if available
+        if [ -n "${ORIGINAL_USER:-}" ]; then
+            chown -R $ORIGINAL_USER:$ORIGINAL_USER $RFSDIR
+        fi
+    else
+        # Running as regular user, fix ownership to current user
+        sudo chown -R $(id -un):$(id -gn) $RFSDIR
+    fi
+    
     rm -rf $RFSDIR/lib/modules
     cp -r $bootpartdir/* $RFSDIR/boot/
-    cp -r $RFSDIR/boot/firmware/* $RFSDIR/lib/firmware
-    cp -r $RFSDIR/boot/modules $RFSDIR/lib/modules
-    rm -r $RFSDIR/boot/firmware $RFSDIR/boot/modules
+    # Create lib/firmware directory if it doesn't exist
+    mkdir -p $RFSDIR/lib/firmware
+    if [ -d $RFSDIR/boot/firmware ]; then
+        cp -r $RFSDIR/boot/firmware/* $RFSDIR/lib/firmware
+        rm -r $RFSDIR/boot/firmware
+    fi
+    if [ -d $RFSDIR/boot/modules ]; then
+        cp -r $RFSDIR/boot/modules $RFSDIR/lib/modules
+        rm -r $RFSDIR/boot/modules
+    fi
 
     # Run simple post rootfs commands
     if [[ -n ${ROOTFS_POST_CMD:-} ]]; then
@@ -547,6 +573,52 @@ flexbuild_launch_docker() {
     fi
 }
 
+flexbuild_launch_docker_user() {
+    local user_id=$(id -u)
+    local group_id=$(id -g)
+    
+    dnum=$(echo $FBDIR | md5sum | cut -b 1-6)
+    prefix="${DOCKER_CONTAINER_PREFIX:-}"
+    containername=${prefix}${username}_fbdebian_user_${DEBIAN_VERSION}_${dnum}
+    
+    # Build the user-aware Docker image if it doesn't exist
+    if ! docker images | grep -q "fbdebian-user.*${DEBIAN_VERSION}"; then
+        echo "Building user-aware Docker image..."
+        make -C $FBDIR/docker/debian -f Makefile.user build-user
+    fi
+    
+    # Create container if it doesn't exist
+    if ! docker ps -a | grep -q $containername; then
+        echo "Creating new container: $containername"
+        docker run -t -i -d \
+            --name="$containername" \
+            --hostname=fbdebian \
+            --privileged=true \
+            --net=host \
+            -v $HOME:$HOME \
+            -v $FBDIR:$FBDIR \
+            -v /lib/modules:/lib/modules \
+            -v /dev:/dev \
+            -v /etc/localtime:/etc/localtime:ro \
+            --add-host=fbdebian:127.0.0.1 \
+            -w $FBDIR \
+            -u $username \
+            fbdebian-user:${DEBIAN_VERSION} \
+            /bin/bash
+            
+        # Attach to the container
+        docker attach $containername
+        
+    elif docker ps -a | grep $containername | grep -q Exited; then
+        echo "Starting existing container: $containername"
+        docker start $containername
+        docker attach $containername
+    else
+        echo "Attaching to running container: $containername"
+        docker attach $containername
+    fi
+}
+
 
 host_connect_target(){
     [ -z "$1" ] &&  fbprint_w "Usage: bld connect <IP_address> [ <local_dir> ]" && exit
@@ -586,7 +658,7 @@ host_push_image_to_target() {
 	bld linux -a $DESTARCH -p $SOCFAMILY
 
 	[ -d $localmntdir/boot ] && fbprint_n "Pushing kernel to target $2 ..." && \
-	find $FBOUTDIR/linux/kernel/$DESTARCH/$SOCFAMILY -maxdepth 1 -type f -exec cp -f {} $localmntdir/boot/ \;
+	find $FBOUTDIR/linux/$KERNEL_TREE/$DESTARCH/$SOCFAMILY -maxdepth 1 -type f -exec cp -f {} $localmntdir/boot/ \;
 
 	[ -d $localmntdir/boot/modules ] && fbprint_n "Pushing modules to target $2 ..." && \
 	cp -rf $KERNEL_OUTPUT_PATH/$curbrch/tmp/lib/modules/* $localmntdir/boot/modules/
@@ -988,7 +1060,7 @@ fi
 [ $SOCFAMILY = IMX -a -z "$BOOT_TYPE" ] && BOOT_TYPE=sd
 [ $DESTARCH = arm64 ] && kernelname=Image && SOCARCH=aarch64 && SYSARCH=arm64
 [ $DESTARCH = arm32 ] && kernelname=uImage && SOCARCH=arm && SYSARCH=armhf
-kernel_img=$FBOUTDIR/linux/kernel/$DESTARCH/$SOCFAMILY/$kernelname
+kernel_img=$FBOUTDIR/linux/$KERNEL_TREE/$DESTARCH/$SOCFAMILY/$kernelname
 
 if [ $DESTARCH != arm64 -a $DESTARCH != arm32 ]; then
     fbprint_e "invalid $DESTARCH, valid arch: arm64, arm32" && exit 1
@@ -1004,7 +1076,7 @@ fi
 
 KERNEL_PATH=$PKGDIR/linux/$KERNEL_TREE
 KERNEL_OUTPUT_PATH=$FBOUTDIR/linux/$KERNEL_TREE/$DESTARCH/$SOCFAMILY/output
-INSTALL_MOD_PATH=$FBOUTDIR/linux/kernel/$DESTARCH/$SOCFAMILY
+INSTALL_MOD_PATH=$FBOUTDIR/linux/$KERNEL_TREE/$DESTARCH/$SOCFAMILY
 
 if [ -z "$CODENAME" -a $DISTROTYPE = ubuntu ]; then
     CODENAME=$UBUNTU_CODENAME; DISTRO_VERSION=$UBUNTU_VERSION
@@ -1103,6 +1175,10 @@ if [ "$1" = docker ]; then
     [ $HOSTARCH = x86_64 -o $HOSTARCH = i686 ] && check_binfmt_qemu
     [ ! -b /dev/loop0 ] && sudo losetup -f
     flexbuild_launch_docker; exit
+elif [ "$1" = docker-user ]; then
+    [ $HOSTARCH = x86_64 -o $HOSTARCH = i686 ] && check_binfmt_qemu
+    [ ! -b /dev/loop0 ] && sudo losetup -f
+    flexbuild_launch_docker_user; exit
 elif [ "$1" = docker-clean ]; then
 	echo "Stopping containers based on fbdebian:*..."
 	docker ps -a --format "{{.ID}} {{.Image}}" | grep '^.* fbdebian:' | awk '{print $1}' | xargs -r docker stop

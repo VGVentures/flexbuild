@@ -453,3 +453,7 @@ repo:
   yocto_oe:
     url:  https://github.com/openembedded/meta-openembedded.git
     branch: scarthgap
+
+  meta_flutter:
+    url:  https://github.com/meta-flutter/meta-flutter.git
+    branch: scarthgap

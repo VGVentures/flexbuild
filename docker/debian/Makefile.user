@@ -1,0 +1,24 @@
+include $(FBDIR)/configs/$(CONFIGLIST)
+
+# Get current user info
+USER_ID := $(shell id -u)
+GROUP_ID := $(shell id -g)
+USER_NAME := $(shell whoami)
+
+build-user:
+	@if [ -n "$(http_proxy)" -o -n "$(https_proxy)" ]; then \
+	     if [ -z "$(http_proxy)" -o -z "$(https_proxy)" ]; then \
+		 echo Please set http_proxy and https_proxy ! && exit 1; \
+	     fi; \
+	     docker build -f Dockerfile.user -t fbdebian-user:$(DEBIAN_VERSION) --network host \
+			  --build-arg http_proxy=$(http_proxy) \
+	                  --build-arg https_proxy=$(https_proxy) \
+	                  --build-arg USER_ID=$(USER_ID) \
+	                  --build-arg GROUP_ID=$(GROUP_ID) \
+	                  --build-arg USER_NAME=$(USER_NAME) . ; \
+	 else \
+	     docker build -f Dockerfile.user -t fbdebian-user:$(DEBIAN_VERSION) --network host \
+	                  --build-arg USER_ID=$(USER_ID) \
+	                  --build-arg GROUP_ID=$(GROUP_ID) \
+	                  --build-arg USER_NAME=$(USER_NAME) . ; \
+	 fi

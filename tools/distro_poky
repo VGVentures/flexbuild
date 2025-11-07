@@ -12,6 +12,9 @@ build_distro_rfs_poky() {
     git clone $repo_yocto_poky_url $PKGDIR/yocto/poky -b $repo_yocto_poky_tag
     [ -d $PKGDIR/yocto/meta-openembedded/meta-oe/recipes-core ] || \
     git clone $repo_yocto_oe_url $PKGDIR/yocto/meta-openembedded -b $repo_yocto_oe_branch
+    # Fetch meta-flutter if configured
+    [ -d $PKGDIR/yocto/meta_flutter/recipes-graphics ] || \
+    { [ -n "$repo_meta_flutter_url" ] && git clone $repo_meta_flutter_url $PKGDIR/yocto/meta_flutter -b ${repo_meta_flutter_branch:-scarthgap}; } || true
 
     pokyrfs=rootfs_${DISTRIB_VERSION}_poky_${DISTROVARIANT}_${DESTARCH}
     . $PKGDIR/yocto/poky/oe-init-build-env $FBOUTDIR/rfs/$pokyrfs
@@ -23,6 +26,12 @@ build_distro_rfs_poky() {
 	bitbake-layers add-layer meta-python
 	bitbake-layers add-layer meta-networking
 	bitbake-layers add-layer meta-multimedia
+	cd -
+    fi
+    # Add meta-flutter layer if it exists and not already added
+    if [ -d $PKGDIR/yocto/meta_flutter ] && [ `grep -c "meta_flutter" $FBOUTDIR/rfs/$pokyrfs/conf/bblayers.conf` -eq '0' ]; then
+	cd $PKGDIR/yocto
+	bitbake-layers add-layer meta_flutter
 	cd -
     fi
     export LANG=en_US.UTF-8

@@ -1,0 +1,19 @@
+# Flutter device permissions
+# GPU and DRM access
+SUBSYSTEM=="drm", GROUP="render", MODE="0664"
+SUBSYSTEM=="dri", GROUP="render", MODE="0664"
+KERNEL=="card[0-9]*", GROUP="render", MODE="0664"
+KERNEL=="renderD[0-9]*", GROUP="render", MODE="0664"
+
+# Input devices for touch/keyboard
+SUBSYSTEM=="input", GROUP="input", MODE="0664"
+KERNEL=="event*", GROUP="input", MODE="0664"
+KERNEL=="mouse*", GROUP="input", MODE="0664"
+
+# Video devices
+SUBSYSTEM=="video4linux", GROUP="video", MODE="0664"
+KERNEL=="video*", GROUP="video", MODE="0664"
+
+# Audio devices
+SUBSYSTEM=="sound", GROUP="audio", MODE="0664"
+KERNEL=="controlC[0-9]*", GROUP="audio", MODE="0664"

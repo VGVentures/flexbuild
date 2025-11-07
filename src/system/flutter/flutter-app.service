@@ -1,0 +1,29 @@
+[Unit]
+Description=Flutter Application
+Documentation=Flutter embedded application service
+After=weston.service
+Requires=weston.service
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=flutter
+Group=flutter
+Environment=XDG_RUNTIME_DIR=/tmp
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=QT_QPA_PLATFORM=wayland
+ExecStart=/usr/local/bin/start-flutter-app.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/tmp
+ProtectHome=yes
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Build wrapper that handles permission issues properly
+# Usage: ./build-wrapper [docker|host] [build-command]
+
+set -e
+
+FBDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source $FBDIR/setup.env
+
+BUILD_MODE="$1"
+shift
+BUILD_CMD="$@"
+
+case "$BUILD_MODE" in
+    "docker")
+        echo "Building in Docker with proper user management..."
+        
+        # Source the docker user launch functions
+        source $FBDIR/tools/docker-user-launch
+        
+        # For Yocto/Poky builds, ensure we're running as non-root
+        if echo "$BUILD_CMD" | grep -q "poky\|yocto"; then
+            echo "Detected Yocto/Poky build - using user container..."
+            flexbuild_docker_exec bld $BUILD_CMD
+        else
+            # For other builds that might need root access
+            echo "Running standard build in container..."
+            flexbuild_docker_exec bld $BUILD_CMD
+        fi
+        ;;
+        
+    "host")
+        echo "Building on host..."
+        
+        # Check if we're on the right OS
+        if ! grep -q "Debian GNU/Linux 12" /etc/issue 2>/dev/null; then
+            echo "Warning: Not running on Debian 12. Consider using docker mode."
+        fi
+        
+        # For Yocto builds, ensure we're not root
+        if echo "$BUILD_CMD" | grep -q "poky\|yocto" && [ "$(id -u)" = "0" ]; then
+            echo "Error: Yocto/Poky builds cannot run as root. Please run as regular user."
+            exit 1
+        fi
+        
+        # Run the build command
+        bld $BUILD_CMD
+        ;;
+        
+    *)
+        echo "Usage: $0 [docker|host] [build-command]"
+        echo ""
+        echo "Examples:"
+        echo "  $0 docker rfs -r poky:tiny -m imx8mp-var-dart"
+        echo "  $0 host rfs -r debian:server -m imx8mp-var-dart"
+        echo "  $0 docker merge-bootpart-rfs -r poky:tiny -m imx8mp-var-dart"
+        exit 1
+        ;;
+esac
