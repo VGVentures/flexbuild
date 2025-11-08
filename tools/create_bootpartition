@@ -78,9 +78,23 @@ generate_bootpartition() {
 	socseries=imx*; scrmask='imx6|imx7'
     fi
 
-    bld distroscr -a $DESTARCH -p $SOCFAMILY
+    # Generate boot scripts using the built-in function
+    generate_distro_boot_script
 
-    ls $FBOUTDIR/bsp/u-boot/$socseries*/*boot.scr | grep -E $scrmask | xargs -I {} cp {} $bootpartdir
+    # Copy boot scripts if they exist
+    if ls $FBOUTDIR/bsp/u-boot/$socseries*/*boot.scr 2>/dev/null | grep -E $scrmask >/dev/null 2>&1; then
+        ls $FBOUTDIR/bsp/u-boot/$socseries*/*boot.scr | grep -E $scrmask | xargs -I {} cp {} $bootpartdir
+        echo "Boot scripts copied successfully"
+    else
+        echo "Warning: No boot scripts found for $socseries* matching $scrmask"
+        echo "Check that board configuration has distro_bootscript and distroboot variables defined"
+    fi
+    
+    # Copy uEnv.txt if it exists (optional, boot.scr is primary)
+    if ls $FBOUTDIR/bsp/u-boot/$socseries*/uEnv.txt 2>/dev/null >/dev/null; then
+        ls $FBOUTDIR/bsp/u-boot/$socseries*/uEnv.txt | xargs -I {} cp {} $bootpartdir
+        echo "uEnv.txt copied successfully"
+    fi
 
     # check UEFI
     if [ "$CONFIG_UEFI_BIN" = y -a $SOCFAMILY = LS -a $DESTARCH = arm64 ]; then
