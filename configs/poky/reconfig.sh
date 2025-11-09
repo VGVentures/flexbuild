@@ -30,7 +30,7 @@ if [ $1 = fixsys ]; then
 	echo export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/lib | sudo tee -a $RFSDIR/etc/profile 1>/dev/null
     fi
     sudo ln -sf /sbin/init $RFSDIR/init
-    sudo mkdir -p $RFSDIR/etc/rpm-postinsts && sudo cp -f $FBDIR/src/system/poky/100-sysvinit-inittab $RFSDIR/etc/rpm-postinsts
+    sudo mkdir -p $RFSDIR/etc/rpm-postinsts && sudo cp -f $FBDIR/src/system/100-sysvinit-inittab $RFSDIR/etc/rpm-postinsts
     sudo sed -i '/start_getty 115200  vt102/d' $RFSDIR/etc/inittab && sudo sed -i '/38400 tty1/d' $RFSDIR/etc/inittab
     cd $RFSDIR/etc/rcS.d && sudo ln -sf ../init.d/run-postinsts S99run-postinsts && cd - && \
     if ! grep -q ^S1 $RFSDIR/etc/inittab; then \

@@ -78,8 +78,15 @@ generate_bootpartition() {
 	socseries=imx*; scrmask='imx6|imx7'
     fi
 
-    # Generate boot scripts using the built-in function
-    generate_distro_boot_script
+    # Generate distro boot script using built-in function
+    echo "Generating boot script for $MACHINE..."
+    generate_distro_boot_script $MACHINE $DESTARCH
+    
+    # Also generate it directly if the function doesn't work
+    if [ ! -f "$FBOUTDIR/bsp/u-boot/$socseries*/boot.scr" ]; then
+        echo "Fallback: calling flex-builder boot script generation..."
+        cd $FBDIR && bld distroscr -a $DESTARCH -p $SOCFAMILY
+    fi
 
     # Copy boot scripts if they exist
     if ls $FBOUTDIR/bsp/u-boot/$socseries*/*boot.scr 2>/dev/null | grep -E $scrmask >/dev/null 2>&1; then
@@ -88,6 +95,11 @@ generate_bootpartition() {
     else
         echo "Warning: No boot scripts found for $socseries* matching $scrmask"
         echo "Check that board configuration has distro_bootscript and distroboot variables defined"
+    fi
+    if ls $bootpartdir/*_boot.scr 2>/dev/null >/dev/null; then
+        # Copy the first board-specific boot script as the main boot.scr
+        cp $(ls $bootpartdir/*_boot.scr | head -1) $bootpartdir/boot.scr
+        echo "Renamed board-specific boot script to boot.scr"
     fi
     
     # Copy uEnv.txt if it exists (optional, boot.scr is primary)
